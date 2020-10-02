@@ -1,0 +1,108 @@
+---
+- hosts: all
+
+  vars_files:
+    - vars.yaml
+
+  tasks:
+    - name: update && upgrade
+      apt:
+        update_cache: yes
+        upgrade: yes
+        autoclean: yes
+        autoremove: yes
+
+    - name: install apt packages
+      apt:
+        name:
+          - 'apt-transport-https'
+          - 'ca-certificates'
+          - 'curl'
+          - 'gnupg'
+          - 'htop'
+          - 'python3-pip'
+          - 'software-properties-common'
+          - 'unzip'
+        state: present
+        update_cache: yes
+
+    - name: check reboot required
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+
+    - name: reboot
+      when: reboot_required_file.stat.exists
+      reboot:
+        reboot_timeout: 600
+
+#----------------------------------------------------------------------------------------------------------------------#
+
+- hosts: cdb
+
+  vars_files:
+    - vars.yaml
+
+  tasks:
+
+    - name: couchdb group
+      group:
+        name: couchdb
+        state: present
+
+    - name: coucdb user
+      user:
+        name: couchdb
+        group: couchdb
+        shell: /sbin/nologin
+        append: yes
+        state: present
+        create_home: no
+
+    - name: couch apt key
+      apt_key:
+        keyserver: keyserver.ubuntu.com
+        id: 8756C4F765C9AC3CB6B85D62379CE192D401AB61
+
+    - name: couch apt repo
+      apt_repository:
+        repo: deb https://apache.bintray.com/couchdb-deb focal main
+        state: present
+        filename: couch
+
+    - name: install couch
+      apt:
+        name: couchdb
+        state: present
+        update_cache: yes
+
+    - name: couch vm.args
+      template:
+        src: couch/vm.args
+        dest: /opt/couchdb/etc/vm.args
+        owner: couchdb
+        group: couchdb
+        mode: '0644'
+
+    - name: couch config.ini
+      template:
+        src: couch/config.ini
+        dest: /opt/couchdb/etc/local.ini
+        owner: couchdb
+        group: couchdb
+        mode: '0644'
+
+    - name: upload couch systemd unit
+      copy:
+        src: couch/couchdb.service
+        dest: /etc/systemd/system
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: enable couchdb service
+      systemd:
+        name: couchdb.service
+        daemon_reload: yes
+        enabled: yes
+        state: started
